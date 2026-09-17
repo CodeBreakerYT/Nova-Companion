@@ -1,0 +1,110 @@
+.nova-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 2.5rem 1.5rem 3rem;
+  background: radial-gradient(circle at 50% 30%, #1a1f3a 0%, #0a0c17 70%);
+  color: #eef1ff;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.nova-shell h1 {
+  font-size: 2.5rem;
+  line-height: 1.4;
+  padding: 0.15em 0;
+  letter-spacing: 0.12em;
+  margin: 0;
+  background: linear-gradient(135deg, #7dd3fc, #c4b5fd);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #9ca3d0;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f87171;
+  flex-shrink: 0;
+}
+
+.dot.online {
+  background: #4ade80;
+  box-shadow: 0 0 8px #4ade80;
+}
+
+.clear-chat-btn {
+  margin-left: 0.75rem;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.72rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: #9ca3d0;
+  cursor: pointer;
+}
+
+.clear-chat-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #eef1ff;
+}
+
+.health-card {
+  padding: 1rem 1.5rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.9rem;
+  color: #c7cbe8;
+}
+
+.nova-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.avatar-viewport {
+  width: 380px;
+  height: 480px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 30%, #232a52 0%, #0d0f1e 75%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.avatar-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.play-desktop-btn {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #7dd3fc, #c4b5fd);
+  color: #0a0c17;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.play-desktop-btn:hover {
+  filter: brightness(1.08);
+}

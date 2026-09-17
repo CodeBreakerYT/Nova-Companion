@@ -1,0 +1,49 @@
+.companion-drag {
+  -webkit-app-region: drag;
+}
+
+.companion-avatar {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.companion-avatar canvas {
+  background: transparent !important;
+}
+
+.companion-hint {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: system-ui, sans-serif;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.55);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.companion-drag:hover .companion-hint {
+  opacity: 1;
+}
+
+.companion-size-panel {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(10, 12, 23, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  -webkit-app-region: no-drag;
+}
+
+.companion-size-panel input[type='range'] {
+  width: 100%;
+  accent-color: #c4b5fd;
+}

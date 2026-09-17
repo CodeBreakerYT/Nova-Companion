@@ -1,0 +1,6 @@
+Paste your Groq API key below, on the line that says PASTE_YOUR_KEY_HERE,
+then save this file and start NOVA.exe.
+
+Don't have one? Get a free key at https://console.groq.com/keys
+
+PASTE_YOUR_KEY_HERE

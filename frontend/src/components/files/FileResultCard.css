@@ -1,0 +1,54 @@
+.file-card {
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.65rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 0.4rem;
+}
+
+.file-card-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.file-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-card-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #eef1ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-card-path,
+.file-card-meta {
+  font-size: 0.72rem;
+  color: #9ca3d0;
+}
+
+.file-card-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.file-card-actions button {
+  font-size: 0.72rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #eef1ff;
+  cursor: pointer;
+}
+
+.file-card-actions button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}

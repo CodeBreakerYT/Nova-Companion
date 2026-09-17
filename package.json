@@ -1,0 +1,49 @@
+{
+  "name": "nova-companion",
+  "version": "0.1.0",
+  "description": "NOVA — AI Desktop Companion",
+  "private": true,
+  "main": "electron/dist/main.js",
+  "scripts": {
+    "build:electron": "tsc -p electron",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:electron": "npm run build:electron && cross-env NODE_ENV=development electron .",
+    "dev": "concurrently -k -n FRONTEND,ELECTRON \"npm run dev:frontend\" \"wait-on http://localhost:5173 && npm run dev:electron\"",
+    "build:frontend": "npm --prefix frontend run build",
+    "dist": "npm run build:frontend && npm run build:electron && electron-builder"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CodeBreakerYT/Nova-Companion.git"
+  },
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
+    "electron": "^44.4.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.5.0",
+    "wait-on": "^9.1.0"
+  },
+  "build": {
+    "appId": "com.techcommons.nova",
+    "productName": "NOVA",
+    "files": [
+      "electron/dist/**/*",
+      "electron/assets/**/*"
+    ],
+    "extraResources": [
+      { "from": "frontend/dist", "to": "frontend" },
+      { "from": "backend/dist/nova-backend", "to": "backend" },
+      { "from": "backend/seed_avatars", "to": "backend/seed_avatars" }
+    ],
+    "extraFiles": [
+      { "from": "GROQ_API_KEY.txt", "to": "GROQ_API_KEY.txt" }
+    ],
+    "win": {
+      "target": ["portable"]
+    }
+  }
+}
