@@ -2,6 +2,9 @@
 
 **A personalized AI desktop companion, built for TechCommons Hacks V2: Hacks to Inspire.**
 
+<img width="1110" height="657" alt="Screenshot 2026-09-19 001141" src="https://github.com/user-attachments/assets/df1090e5-70e7-48b9-84c3-01e8509cbea7" />
+
+
 ## The problem
 
 Every computer today makes *you* adapt to *it*. You learn folder structures,
