@@ -1,44 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNovaStore } from '../../store/nova-store'
-import { sendUserMessage } from '../../lib/ws'
+import { getSavedMicId, saveMicId, startVoiceCapture, stopVoiceCapture } from '../../lib/voiceCapture'
 import './MicButton.css'
-
-const MIC_DEVICE_STORAGE_KEY = 'nova-mic-device-id'
-
-function getSavedMicId(): string | null {
-  try {
-    return localStorage.getItem(MIC_DEVICE_STORAGE_KEY)
-  } catch {
-    return null
-  }
-}
-
-function saveMicId(deviceId: string) {
-  try {
-    localStorage.setItem(MIC_DEVICE_STORAGE_KEY, deviceId)
-  } catch {
-    // per-viewer convenience only — fine if this silently no-ops
-  }
-}
 
 export function MicButton() {
   const connected = useNovaStore((s) => s.connected)
   const avatarState = useNovaStore((s) => s.avatarState)
-  const setAvatarState = useNovaStore((s) => s.setAvatarState)
   const [recording, setRecording] = useState(false)
-  const [busy, setBusy] = useState(false)
   const [showDeviceMenu, setShowDeviceMenu] = useState(false)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [selectedMicId, setSelectedMicId] = useState<string | null>(getSavedMicId)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const streamRef = useRef<MediaStream | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-
-  const stopStream = () => {
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
-  }
 
   const loadDevices = async () => {
     try {
@@ -62,71 +34,15 @@ export function MicButton() {
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [showDeviceMenu])
 
-  const startRecording = async () => {
-    try {
-      const audioConstraints: MediaTrackConstraints | boolean = selectedMicId
-        ? { deviceId: { exact: selectedMicId } }
-        : true
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
-      streamRef.current = stream
-      chunksRef.current = []
-
-      const recorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = recorder
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data)
-      }
-
-      recorder.onstop = async () => {
-        stopStream()
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-        if (blob.size < 1000) {
-          setAvatarState('idle')
-          setBusy(false)
-          return
-        }
-
-        setBusy(true)
-        setAvatarState('thinking')
-        try {
-          const form = new FormData()
-          form.append('audio', blob, 'speech.webm')
-          const res = await fetch('http://127.0.0.1:8765/api/stt', { method: 'POST', body: form })
-          const data = await res.json()
-          const text = (data.text || '').trim()
-          if (text) {
-            sendUserMessage(text)
-          } else {
-            setAvatarState('confused')
-            setTimeout(() => setAvatarState('idle'), 1200)
-          }
-        } catch {
-          setAvatarState('error')
-          setTimeout(() => setAvatarState('idle'), 1200)
-        } finally {
-          setBusy(false)
-        }
-      }
-
-      recorder.start()
-      setRecording(true)
-      setAvatarState('listening')
-    } catch {
-      setAvatarState('error')
-      setTimeout(() => setAvatarState('idle'), 1200)
-    }
-  }
-
-  const stopRecording = () => {
-    mediaRecorderRef.current?.stop()
-    setRecording(false)
-  }
-
   const toggle = () => {
-    if (!connected || busy) return
-    if (recording) stopRecording()
-    else startRecording()
+    if (!connected) return
+    if (recording) {
+      stopVoiceCapture()
+      setRecording(false)
+    } else {
+      startVoiceCapture()
+      setRecording(true)
+    }
   }
 
   const selectDevice = (deviceId: string) => {
@@ -140,7 +56,7 @@ export function MicButton() {
       <button
         className={`mic-button ${recording ? 'recording' : ''}`}
         onClick={toggle}
-        disabled={!connected || busy}
+        disabled={!connected}
         title={recording ? 'Stop and send' : 'Talk to NOVA'}
       >
         🎙️
@@ -150,7 +66,7 @@ export function MicButton() {
       <button
         className="mic-device-caret"
         onClick={() => setShowDeviceMenu((v) => !v)}
-        disabled={recording || busy}
+        disabled={recording}
         title="Choose microphone"
       >
         ˅

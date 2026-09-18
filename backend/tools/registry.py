@@ -33,6 +33,7 @@ from tools.file_tools import (
     write_code_file,
 )
 from tools.productivity_tools import CreateNoteArgs, CreateTaskArgs, create_note, create_task
+from tools.screen_tools import ReadScreenTextArgs, read_screen_text
 from tools.web_tools import OpenUrlArgs, WebSearchArgs, open_url, web_search
 
 
@@ -136,6 +137,13 @@ TOOLS: dict[str, ToolSpec] = {
         TypeForMeArgs,
         type_for_me,
         needs_confirmation=True,
+    ),
+    "read_screen_text": ToolSpec(
+        "Read the real text content of whatever window the user currently has focused — not a screenshot, the "
+        "actual text via accessibility APIs. Use this when the user asks what's on their screen, wants help with "
+        "what they're currently writing, or asks you to continue/edit/review something without pasting it in.",
+        ReadScreenTextArgs,
+        read_screen_text,
     ),
     "recent_activity": ToolSpec(
         "See what apps/windows the user has actually had focused recently, most recent first — "

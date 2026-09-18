@@ -148,14 +148,15 @@ function companionSize(scale: number) {
 }
 
 /** The Desktop-Mate-style floating companion. The window itself IS her —
- * small, transparent, frameless, always-on-top — dragged with native OS
- * window dragging (-webkit-app-region: drag in CompanionView.css) rather
- * than a fullscreen click-through overlay with manual hit-testing. That
- * fullscreen approach (tried first) was fragile: click-through state and
- * focus stealing kept breaking "click to interact" and "hold E". A small
- * always-interactive window sidesteps all of that — clicks/keys just work
- * because it's a normal window, and since it only occupies the area she
- * actually stands on, it never blocks anything elsewhere on the desktop. */
+ * small, transparent, frameless, always-on-top. A fullscreen click-through
+ * overlay with manual hit-testing was tried first and was fragile:
+ * click-through state and focus stealing kept breaking "click to interact"
+ * and "hold E". A small always-interactive window sidesteps all of that —
+ * clicks/keys just work because it's a normal window, and since it only
+ * occupies the area she actually stands on, it never blocks anything
+ * elsewhere on the desktop. Dragging and idle roaming (see scheduleRoam
+ * below) both move this window directly via setPosition rather than CSS
+ * app-region, so right-click/keyboard input is never intercepted by the OS. */
 function createCompanionWindow() {
   logLine('createCompanionWindow() called')
   const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize
@@ -193,13 +194,22 @@ function createCompanionWindow() {
   // genuinely on top at that pixel, not whichever one is visually behind.
   // Reacting immediately on blur (something else just got activated) closes
   // that window much faster than polling alone.
-  companionWindow.on('blur', reassertCompanionOnTop)
+  companionWindow.on('blur', () => {
+    reassertCompanionOnTop()
+    // Safety net: if a mouseup ever got missed (e.g. released over another
+    // window during a very fast drag), losing focus is a reasonable signal
+    // to stop polling rather than leaving her stuck following the cursor.
+    endDrag()
+  })
 
   companionWindow.on('closed', () => {
     logLine('companion window closed')
     companionWindow = null
+    stopRoaming()
     rebuildTrayMenu()
   })
+
+  scheduleNextRoam()
 
   rebuildTrayMenu()
 }
@@ -235,6 +245,114 @@ function setCompanionScale(scale: number) {
 }
 
 ipcMain.on('nova:resize-companion', (_event, scale: number) => setCompanionScale(scale))
+
+// Dragging used to be a plain CSS `-webkit-app-region: drag` on the whole
+// window — simple, but on Windows a right-click inside a drag region gets
+// intercepted by the OS as a titlebar action (it thinks you're right-
+// clicking a caption bar) instead of ever reaching the page as a normal
+// 'contextmenu' event. That's what was silently swallowing every right-
+// click on the character. Doing the drag ourselves in the main process
+// keeps the whole window as an ordinary, fully-interactive surface — right-
+// click, E-key focus, all of it — with dragging layered on top via mouse
+// polling instead of the OS's native caption-drag behavior.
+let dragOffset: { x: number; y: number } | null = null
+let dragPollTimer: NodeJS.Timeout | null = null
+
+ipcMain.on('nova:start-drag', (_event, offsetX: number, offsetY: number) => {
+  stopRoaming()
+  dragOffset = { x: offsetX, y: offsetY }
+  if (dragPollTimer) clearInterval(dragPollTimer)
+  dragPollTimer = setInterval(() => {
+    if (!companionWindow || !dragOffset) return
+    const { x, y } = screen.getCursorScreenPoint()
+    companionWindow.setPosition(x - dragOffset.x, y - dragOffset.y)
+  }, 16)
+})
+
+function endDrag() {
+  const wasDragging = dragOffset !== null
+  dragOffset = null
+  if (dragPollTimer) {
+    clearInterval(dragPollTimer)
+    dragPollTimer = null
+  }
+  // Pick up roaming again from wherever the user just placed her.
+  if (wasDragging) scheduleNextRoam()
+}
+
+ipcMain.on('nova:end-drag', endDrag)
+
+// ---------------------------------------------------------------------------
+// Idle roaming — she periodically walks to a new spot along the bottom of
+// the screen on her own, Desktop-Mate style, instead of only ever standing
+// still until dragged. Same setPosition-based approach as dragging (not CSS
+// app-region), animated with a short eased tween rather than teleporting.
+// ---------------------------------------------------------------------------
+
+const ROAM_MIN_DELAY_MS = 15000
+const ROAM_MAX_DELAY_MS = 35000
+const ROAM_DURATION_MS = 1800
+const ROAM_STEP_MS = 16
+
+let roamDelayTimer: NodeJS.Timeout | null = null
+let roamAnimTimer: NodeJS.Timeout | null = null
+
+function stopRoaming() {
+  if (roamDelayTimer) {
+    clearTimeout(roamDelayTimer)
+    roamDelayTimer = null
+  }
+  if (roamAnimTimer) {
+    clearInterval(roamAnimTimer)
+    roamAnimTimer = null
+  }
+}
+
+function scheduleNextRoam() {
+  if (roamDelayTimer) clearTimeout(roamDelayTimer)
+  const delay = ROAM_MIN_DELAY_MS + Math.random() * (ROAM_MAX_DELAY_MS - ROAM_MIN_DELAY_MS)
+  roamDelayTimer = setTimeout(startRoamWalk, delay)
+}
+
+function startRoamWalk() {
+  if (!companionWindow || dragOffset) {
+    scheduleNextRoam()
+    return
+  }
+  const { width: screenW } = screen.getPrimaryDisplay().workAreaSize
+  const bounds = companionWindow.getBounds()
+  const maxX = screenW - bounds.width
+  const targetX = Math.max(0, Math.min(maxX, Math.round(Math.random() * maxX)))
+  const startX = bounds.x
+  const dx = targetX - startX
+  // Not worth walking for a few pixels — try again later instead of a
+  // barely-visible twitch.
+  if (Math.abs(dx) < 60) {
+    scheduleNextRoam()
+    return
+  }
+
+  companionWindow.webContents.send('nova:roam-direction', dx > 0 ? 1 : -1)
+
+  const steps = Math.round(ROAM_DURATION_MS / ROAM_STEP_MS)
+  let step = 0
+  if (roamAnimTimer) clearInterval(roamAnimTimer)
+  roamAnimTimer = setInterval(() => {
+    if (!companionWindow || dragOffset) {
+      stopRoaming()
+      scheduleNextRoam()
+      return
+    }
+    step += 1
+    const t = Math.min(1, step / steps)
+    const eased = 1 - (1 - t) * (1 - t) // ease-out
+    companionWindow.setPosition(Math.round(startX + dx * eased), bounds.y)
+    if (t >= 1) {
+      stopRoaming()
+      scheduleNextRoam()
+    }
+  }, ROAM_STEP_MS)
+}
 
 ipcMain.on('nova:show-companion-menu', async (event) => {
   logLine('nova:show-companion-menu received')
@@ -354,7 +472,7 @@ function buildFullMenuItems(status: AvatarStatus | null): Electron.MenuItemConst
       click: () =>
         dialog.showMessageBox({
           title: 'NOVA — Desktop Companion',
-          message: 'Click her to interact, then hold E for a reaction.\nDrag her anywhere on your screen.\nRight-click for this menu.',
+          message: 'Click her for a reaction. Hold E to talk to her — release to send.\nDrag her anywhere on your screen.\nRight-click for this menu.',
         }),
     },
     {

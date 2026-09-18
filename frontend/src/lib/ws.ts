@@ -100,6 +100,15 @@ function handleMessage(event: MessageEvent) {
       }
       break
 
+    case 'remote_turn':
+      // A turn that happened on a *different* window's connection (e.g. a
+      // voice exchange through the desktop companion) — sync it into this
+      // window's chat log without re-speaking or touching streaming state,
+      // since the originating connection already handled that side of it.
+      if (msg.user_text) addMessage({ id: nextId(), role: 'user', kind: 'text', text: msg.user_text })
+      if (msg.assistant_text) addMessage({ id: nextId(), role: 'assistant', kind: 'text', text: msg.assistant_text })
+      break
+
     case 'proactive_message':
       // Unprompted check-in — NOVA speaking up on her own, not replying to
       // something the user said. No currentAssistantId/streaming involved.

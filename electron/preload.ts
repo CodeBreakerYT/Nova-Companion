@@ -11,9 +11,16 @@ contextBridge.exposeInMainWorld('novaElectron', {
   showCompanionMenu: () => ipcRenderer.send('nova:show-companion-menu'),
   focusCompanion: () => ipcRenderer.send('nova:focus-companion'),
   resizeCompanion: (scale: number) => ipcRenderer.send('nova:resize-companion', scale),
+  startDrag: (offsetX: number, offsetY: number) => ipcRenderer.send('nova:start-drag', offsetX, offsetY),
+  endDrag: () => ipcRenderer.send('nova:end-drag'),
   onToggleSizePanel: (cb: () => void) => {
     const listener = () => cb()
     ipcRenderer.on('nova:toggle-size-panel', listener)
     return () => ipcRenderer.removeListener('nova:toggle-size-panel', listener)
+  },
+  onRoamDirection: (cb: (direction: 1 | -1) => void) => {
+    const listener = (_event: unknown, direction: 1 | -1) => cb(direction)
+    ipcRenderer.on('nova:roam-direction', listener)
+    return () => ipcRenderer.removeListener('nova:roam-direction', listener)
   },
 })

@@ -10,7 +10,10 @@ declare global {
       showCompanionMenu: () => void
       focusCompanion: () => void
       resizeCompanion: (scale: number) => void
+      startDrag: (offsetX: number, offsetY: number) => void
+      endDrag: () => void
       onToggleSizePanel: (cb: () => void) => () => void
+      onRoamDirection: (cb: (direction: 1 | -1) => void) => () => void
     }
   }
 }

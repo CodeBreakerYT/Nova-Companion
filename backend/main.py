@@ -148,7 +148,16 @@ def _safe_avatar_path(filename: str) -> Path:
 
 @app.get("/api/avatar/list")
 async def avatar_list():
-    return {"avatars": [p.name for p in AVATARS_DIR.glob("*.vrm")], "active": get_avatar_model()}
+    avatars = [p.name for p in AVATARS_DIR.glob("*.vrm")]
+    active = get_avatar_model()
+    if active is not None and active not in avatars:
+        # The saved selection points at a file that's no longer there (e.g.
+        # a seed avatar got renamed/removed in an update) — silently falling
+        # back to the default character beats trying to load a 404'd model
+        # and leaving the avatar viewport blank with no visible error.
+        active = None
+        set_avatar_model(None)
+    return {"avatars": avatars, "active": active}
 
 
 @app.post("/api/avatar/upload")
@@ -254,6 +263,27 @@ async def _speak_nudge(current: dict) -> None:
     await broadcast_avatar_state("idle")
 
 
+SHARED_HISTORY: list[dict] = []
+PENDING_CONFIRMATION: dict | None = None
+
+
+async def broadcast_to_others(exclude: WebSocket, payload: dict) -> None:
+    """Same fan-out as broadcast_avatar_state, but skips the connection that
+    triggered the turn — that one already got the full experience (streamed
+    tokens, spoken reply) through its own request/response, so re-sending it
+    the final text would just make it speak the same reply twice."""
+    dead = []
+    for client in CONNECTED_SESSIONS:
+        if client is exclude:
+            continue
+        try:
+            await client.send_json(payload)
+        except Exception:
+            dead.append(client)
+    for d in dead:
+        CONNECTED_SESSIONS.discard(d)
+
+
 async def broadcast_avatar_state(state: str) -> None:
     """Pushed to every open session — not just the one that triggered it —
     so the transparent desktop-companion window (its own WebSocket
@@ -273,8 +303,20 @@ async def broadcast_avatar_state(state: str) -> None:
 async def session(ws: WebSocket):
     await ws.accept()
     CONNECTED_SESSIONS.add(ws)
-    history: list[dict] = []
-    pending_confirmation: dict | None = None
+    # One shared conversation (SHARED_HISTORY / PENDING_CONFIRMATION, both
+    # module-level) across every connected window — the main chat window
+    # and the desktop companion used to each keep their own local history,
+    # so a voice exchange through the companion was invisible to the main
+    # window's chat log and vice versa. Now every window reads/writes the
+    # same memory; only the streamed "typing" experience and TTS playback
+    # stay per-window (see broadcast_to_others below), so a reply doesn't
+    # get spoken twice.
+    #
+    # PENDING_CONFIRMATION is reassigned from several branches below —
+    # Python requires the `global` declaration to appear exactly once, before
+    # any reference to the name anywhere in the function (repeating it in
+    # each branch is a SyntaxError, not just redundant).
+    global PENDING_CONFIRMATION
     loop = asyncio.get_event_loop()
 
     async def drain_events(out_queue: "queue.Queue[dict | None]") -> str:
@@ -298,16 +340,20 @@ async def session(ws: WebSocket):
                 elif event["tool"] == "search_files" and result.get("count", 0) > 0:
                     await broadcast_avatar_state("happy")
             elif etype == "needs_confirmation":
-                nonlocal pending_confirmation
-                pending_confirmation = {"tool": event["tool"], "args": event["args"]}
-                await ws.send_json(
-                    {
-                        "type": "confirm_required",
-                        "tool": event["tool"],
-                        "args": event["args"],
-                        "message": event["message"],
-                    }
-                )
+                global PENDING_CONFIRMATION
+                PENDING_CONFIRMATION = {"tool": event["tool"], "args": event["args"]}
+                # Broadcast, not just to this connection — a confirmation
+                # triggered by a voice request through the companion (which
+                # has no confirm UI of its own) needs to be answerable from
+                # the main window instead of being stranded nowhere.
+                confirm_payload = {
+                    "type": "confirm_required",
+                    "tool": event["tool"],
+                    "args": event["args"],
+                    "message": event["message"],
+                }
+                await ws.send_json(confirm_payload)
+                await broadcast_to_others(ws, confirm_payload)
             elif etype == "token":
                 if not sent_speaking:
                     await broadcast_avatar_state("speaking")
@@ -333,7 +379,7 @@ async def session(ws: WebSocket):
                     continue
                 HAS_GREETED = True
 
-                history.append(
+                SHARED_HISTORY.append(
                     {
                         "role": "system",
                         "content": "NOVA just started up and the user is about to see you for the first time this "
@@ -343,25 +389,28 @@ async def session(ws: WebSocket):
                 )
                 await broadcast_avatar_state("thinking")
                 out_queue: "queue.Queue[dict | None]" = queue.Queue()
-                thread = threading.Thread(target=_run_turn_and_stream_history, args=(history, out_queue), daemon=True)
+                thread = threading.Thread(
+                    target=_run_turn_and_stream_history, args=(SHARED_HISTORY, out_queue), daemon=True
+                )
                 thread.start()
                 full_reply = await drain_events(out_queue) or "Hey! Good to see you."
-                history.append({"role": "assistant", "content": full_reply})
+                SHARED_HISTORY.append({"role": "assistant", "content": full_reply})
                 await ws.send_json({"type": "final_message", "text": full_reply, "greeting": True})
+                await broadcast_to_others(ws, {"type": "remote_turn", "assistant_text": full_reply})
                 await broadcast_avatar_state("idle")
                 continue
 
             if ptype == "clear_history":
-                history.clear()
-                pending_confirmation = None
+                SHARED_HISTORY.clear()
+                PENDING_CONFIRMATION = None
                 await broadcast_avatar_state("idle")
                 continue
 
             if ptype == "tool_confirm":
-                if pending_confirmation is None:
+                if PENDING_CONFIRMATION is None:
                     continue
-                tool, args = pending_confirmation["tool"], pending_confirmation["args"]
-                pending_confirmation = None
+                tool, args = PENDING_CONFIRMATION["tool"], PENDING_CONFIRMATION["args"]
+                PENDING_CONFIRMATION = None
                 approved = bool(payload.get("approved"))
 
                 await broadcast_avatar_state("thinking")
@@ -371,16 +420,19 @@ async def session(ws: WebSocket):
                     note = f"The user approved '{tool}' with {args}. Result: {result}. Confirm what happened in one short, natural sentence."
                 else:
                     note = f"The user declined '{tool}'. Acknowledge that briefly and naturally."
-                history.append({"role": "system", "content": note})
+                SHARED_HISTORY.append({"role": "system", "content": note})
 
                 out_queue: "queue.Queue[dict | None]" = queue.Queue()
-                thread = threading.Thread(target=_run_turn_and_stream_history, args=(history, out_queue), daemon=True)
+                thread = threading.Thread(
+                    target=_run_turn_and_stream_history, args=(SHARED_HISTORY, out_queue), daemon=True
+                )
                 thread.start()
                 full_reply = await drain_events(out_queue) or "Done — let me know if you need anything else."
 
-                history.append({"role": "assistant", "content": full_reply})
-                history[:] = history[-MAX_HISTORY_TURNS * 2 :]
+                SHARED_HISTORY.append({"role": "assistant", "content": full_reply})
+                SHARED_HISTORY[:] = SHARED_HISTORY[-MAX_HISTORY_TURNS * 2 :]
                 await ws.send_json({"type": "final_message", "text": full_reply})
+                await broadcast_to_others(ws, {"type": "remote_turn", "assistant_text": full_reply})
                 await broadcast_avatar_state("idle")
                 continue
 
@@ -391,33 +443,39 @@ async def session(ws: WebSocket):
             if not text:
                 continue
 
-            pending_confirmation = None
+            PENDING_CONFIRMATION = None
             global LAST_NUDGE_TEXT
             if LAST_NUDGE_TEXT is not None:
-                history.append(
+                SHARED_HISTORY.append(
                     {
                         "role": "system",
                         "content": f"(For context: you just proactively said to the user: \"{LAST_NUDGE_TEXT}\")",
                     }
                 )
                 LAST_NUDGE_TEXT = None
-            history.append({"role": "user", "content": text})
+            SHARED_HISTORY.append({"role": "user", "content": text})
+            # Other windows won't stream this turn's tokens (only the
+            # originating connection does), but their chat panels should
+            # still show the user's side of the conversation right away
+            # rather than waiting for — or never getting — the reply.
+            await broadcast_to_others(ws, {"type": "remote_turn", "user_text": text})
             await broadcast_avatar_state("thinking")
 
             out_queue = queue.Queue()
-            thread = threading.Thread(target=_agent_turn_in_thread, args=(history, out_queue), daemon=True)
+            thread = threading.Thread(target=_agent_turn_in_thread, args=(SHARED_HISTORY, out_queue), daemon=True)
             thread.start()
             full_reply = await drain_events(out_queue)
 
-            if pending_confirmation is not None:
+            if PENDING_CONFIRMATION is not None:
                 # Turn paused waiting on the user's yes/no — nothing to
                 # finalize yet, and no assistant turn to record in history.
                 continue
 
             full_reply = full_reply or "Sorry, I hit a snag processing that — could you try again?"
-            history.append({"role": "assistant", "content": full_reply})
-            history[:] = history[-MAX_HISTORY_TURNS * 2 :]
+            SHARED_HISTORY.append({"role": "assistant", "content": full_reply})
+            SHARED_HISTORY[:] = SHARED_HISTORY[-MAX_HISTORY_TURNS * 2 :]
             await ws.send_json({"type": "final_message", "text": full_reply})
+            await broadcast_to_others(ws, {"type": "remote_turn", "assistant_text": full_reply})
             await broadcast_avatar_state("idle")
     except WebSocketDisconnect:
         pass

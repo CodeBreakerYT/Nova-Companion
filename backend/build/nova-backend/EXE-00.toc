@@ -73,7 +73,7 @@
  [],
  False,
  False,
- 1789676480,
+ 1789745245,
  [('run.exe',
    'L:\\Hackathons\\college\\TechCommons\\Nova-Companion\\backend\\.venv\\Lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\run.exe',
    'EXECUTABLE')],
